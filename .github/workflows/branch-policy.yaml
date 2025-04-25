@@ -1,0 +1,27 @@
+name: Branch Naming Policy Action
+
+on:
+  create:
+  delete:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  branch-naming-policy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Branch Naming Policy Action
+        uses: nicklegan/github-repo-branch-naming-policy-action@v1.1.1
+        if: github.event_name == 'create' || github.event_name == 'pull_request'
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          regex: '^(feature|bugfix|hotfix|release)/[a-zA-Z0-9._-]+$'
+          flags: i
