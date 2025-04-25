@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import subprocess
+import sys
+
+
+def run(cmd, check=True, capture_output=False, text=True, allow_failure=False):
+    """Run a shell command."""
+    try:
+        result = subprocess.run(
+            cmd, shell=True, check=check, capture_output=capture_output, text=text
+        )
+        return result.stdout.strip() if capture_output else None
+    except subprocess.CalledProcessError:
+        if allow_failure:
+            return None
+        else:
+            raise
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def main():
+    # Redirect output to stderr (Python's print already goes to stdout, so we handle errors in fail())
+
+    # Determine "against" reference
+    try:
+        run("git rev-parse --verify HEAD", check=True)
+        against = "HEAD"
+    except subprocess.CalledProcessError:
+        against = run("git hash-object -t tree /dev/null", capture_output=True)
+
+    # 1. Enforce branch naming policy
+    branch_name = run("git symbolic-ref --short HEAD", capture_output=True)
+    branch_pattern = r"^(feature|bugfix|hotfix|release)/[a-zA-Z0-9._-]+$"
+    if not re.match(branch_pattern, branch_name):
+        fail(
+            f"""Branch name '{branch_name}' does not match required pattern:
+   -> Must match: {branch_pattern}
+
+Examples:
+  feature/awesome-feature
+  bugfix/issue-1234
+  hotfix/security-patch
+  release/v1.0.0
+"""
+        )
+
+    # 2. Prevent overly large commits
+    changed_files = int(
+        run("git diff --cached --name-only | wc -l", capture_output=True)
+    )
+    MAX_CHANGED_FILES = 5
+    if changed_files > MAX_CHANGED_FILES:
+        fail(
+            f"Too many files changed ({changed_files}). Please break this into smaller commits."
+        )
+
+    # 3. Run Cargo checks
+    print("+cargo clippy --all -- -D warnings")
+    run("cargo clippy --all -- -D warnings")
+
+    print("+cargo +nightly fmt --all -- --check")
+    run("cargo +nightly fmt --all -- --check")
+
+    print("+cargo test --all")
+    run("cargo test --all")
+
+    # 4. Disallow non-ASCII filenames
+    allownonascii = run(
+        "git config --type=bool hooks.allownonascii",
+        capture_output=True,
+        allow_failure=True,
+    )
+    if allownonascii != "true":
+        diff_output = subprocess.run(
+            f"git diff-index --cached --name-only --diff-filter=A -z {against}",
+            shell=True,
+            capture_output=True,
+        ).stdout
+        ascii_only = all(c in range(32, 127) or c == 0 for c in diff_output)
+        if not ascii_only:
+            fail("Error: Attempt to add a non-ASCII file name.")
+
+    # 5. Whitespace errors
+    print("+git diff-index --check --cached", against)
+    run(f"git diff-index --check --cached {against}")
+
+
+if __name__ == "__main__":
+    main()
