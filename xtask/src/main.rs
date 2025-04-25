@@ -1,9 +1,7 @@
-use std::{
-    env,
-    fs,
-    path::{PathBuf},
-    process::exit,
-};
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+use std::process::exit;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -18,7 +16,7 @@ fn main() {
         _ => {
             eprintln!("Unknown xtask command: {}", args[1]);
             exit(1);
-        }
+        },
     }
 }
 
