@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+import json
+from pathlib import Path
+
+
+def run(cmd, check=True, capture_output=False, text=True, allow_failure=False):
+    """Run a shell command."""
+    try:
+        result = subprocess.run(
+            cmd, shell=True, check=check, capture_output=capture_output, text=text
+        )
+        return result.stdout.strip() if capture_output else None
+    except subprocess.CalledProcessError:
+        if allow_failure:
+            return None
+        else:
+            raise
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def rust_files_changed():
+    """Detect if non-xtask Rust files were changed."""
+    changed_files = run("git diff --name-only origin/main...HEAD", capture_output=True)
+    if not changed_files:
+        return False
+
+    for file in changed_files.splitlines():
+        if file.endswith(".rs") and not file.startswith("xtask/"):
+            return True
+    return False
+
+
+def main():
+    if not rust_files_changed():
+        print("No relevant Rust files changed. Skipping tests and coverage.")
+        return
+
+    print("Relevant Rust files changed. Running tests and coverage...")
+
+    print("Running cargo test before coverage...")
+    run("cargo test --all")
+
+    print("Checking cargo-llvm-cov is installed...")
+    installed = run("cargo install --list", capture_output=True)
+    if "cargo-llvm-cov" not in installed:
+        fail(
+            "cargo-llvm-cov not installed. Install it with: cargo install cargo-llvm-cov"
+        )
+
+    print("Running cargo llvm-cov on all binaries...")
+    metadata = run("cargo metadata --no-deps --format-version 1", capture_output=True)
+    packages = json.loads(metadata)["packages"]
+
+    for package in packages:
+        name = package["name"]
+        if name == "xtask":
+            print(f"Skipping {name} package.")
+            continue
+
+        targets = package.get("targets", [])
+        has_bin = any(t["kind"] == ["bin"] for t in targets)
+        if has_bin:
+            print(f"+cargo llvm-cov run --bin {name}")
+            run(
+                f"cargo llvm-cov run --bin {name} --json --output-path coverage-{name}.json"
+            )
+
+    print("All coverage checks passed.")
+
+
+if __name__ == "__main__":
+    main()
