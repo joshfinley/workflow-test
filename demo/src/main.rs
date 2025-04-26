@@ -99,6 +99,72 @@ fn main() {
     println!("post content: {}", post.content());
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn draft_post_content_is_empty() {
+        let mut post = Post::new();
+        post.add_text("Learning Rust!");
+
+        assert_eq!("", post.content());
+    }
+
+    #[test]
+    fn pending_review_post_content_is_still_empty() {
+        let mut post = Post::new();
+        post.add_text("Learning Rust!");
+        post.request_review();
+
+        assert_eq!("", post.content());
+    }
+
+    #[test]
+    fn published_post_content_is_visible() {
+        let mut post = Post::new();
+        let text = "Learning Rust!";
+        post.add_text(text);
+        post.request_review();
+        post.approve();
+
+        assert_eq!(text, post.content());
+    }
+
+    #[test]
+    fn approving_without_review_does_not_publish() {
+        let mut post = Post::new();
+        post.add_text("Skipping review?");
+        post.approve();
+
+        assert_eq!(
+            "",
+            post.content(),
+            "Post should not be published without review"
+        );
+    }
+
+    #[test]
+    fn double_request_review_does_not_change_state() {
+        let mut post = Post::new();
+        post.add_text("Double review request");
+        post.request_review();
+        post.request_review(); // should not move to Published
+
+        assert_eq!("", post.content(), "Post should still not be published");
+    }
+
+    #[test]
+    fn approve_after_review_only_once_needed() {
+        let mut post = Post::new();
+        post.add_text("Approval after one review");
+        post.request_review();
+        post.approve();
+
+        assert_eq!("Approval after one review", post.content());
+    }
+}
+
 // Mozilla Public License Version 2.0
 // ================================
 //
