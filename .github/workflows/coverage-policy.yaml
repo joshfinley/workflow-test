@@ -1,0 +1,76 @@
+name: Enforce Coverage for Rust Package Changes
+
+on:
+  pull_request:
+    paths:
+      - '**/*.rs'  # Only run if .rs files are touched
+
+jobs:
+  coverage-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+
+      - name: Check coverage file and enforce minimum
+        run: |
+          echo "Finding changed Rust files..."
+
+          # Get list of changed files compared to the target branch
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }})
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Set the package we are monitoring
+          TARGET_PACKAGE="demo"
+
+          # Track whether we need to enforce coverage
+          NEEDS_COVERAGE_CHECK=false
+
+          for file in $CHANGED_FILES; do
+            if [[ "$file" == "$TARGET_PACKAGE/"* ]]; then
+              NEEDS_COVERAGE_CHECK=true
+              break
+            fi
+          done
+
+          if [[ "$NEEDS_COVERAGE_CHECK" == "true" ]]; then
+            COVERAGE_FILE="coverage-${TARGET_PACKAGE}.json"
+
+            echo "Rust source code changed in package '${TARGET_PACKAGE}'. Checking for coverage file..."
+
+            if [[ ! -f "$COVERAGE_FILE" ]]; then
+              echo "ERROR: Required coverage file '${COVERAGE_FILE}' not found."
+              exit 1
+            fi
+
+            echo "Found coverage file '${COVERAGE_FILE}'. Verifying coverage..."
+
+            # Extract line coverage percent
+            COVERAGE_PERCENT=$(jq '.data[0].totals.lines.percent' "$COVERAGE_FILE")
+
+            if [[ -z "$COVERAGE_PERCENT" ]]; then
+              echo "ERROR: Could not read line coverage percentage from '${COVERAGE_FILE}'."
+              exit 1
+            fi
+
+            echo "Line coverage is ${COVERAGE_PERCENT}%."
+
+            # Enforce minimum 80% line coverage
+            REQUIRED_COVERAGE=80.0
+            if (( $(echo "$COVERAGE_PERCENT < $REQUIRED_COVERAGE" | bc -l) )); then
+              echo "ERROR: Coverage ${COVERAGE_PERCENT}% is below required ${REQUIRED_COVERAGE}%."
+              exit 1
+            fi
+
+            echo "Coverage requirement satisfied."
+          else
+            echo "No relevant package changes detected. Skipping coverage check."
+          fi

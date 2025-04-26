@@ -175,7 +175,36 @@ mod tests {
 
         assert_eq!("Initial content. This should not appear.", post.content());
     }
+
+    #[test]
+    fn published_post_cannot_change_state() {
+        let mut post = Post::new();
+        let text = "Final content.";
+        post.add_text(text);
+        post.request_review();
+        post.approve();
+
+        // Now the post is published
+        assert_eq!(text, post.content());
+
+        // Try to request review again
+        post.request_review();
+        assert_eq!(
+            text,
+            post.content(),
+            "Published post should stay published after request_review"
+        );
+
+        // Try to approve again
+        post.approve();
+        assert_eq!(
+            text,
+            post.content(),
+            "Published post should stay published after approve"
+        );
+    }
 }
+
 
 // Mozilla Public License Version 2.0
 // ================================
