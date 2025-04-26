@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import re
+import sys
+
+
+def main():
+    commit_msg_file = sys.argv[1]
+    with open(commit_msg_file, "r", encoding="utf-8") as f:
+        first_line = f.readline().strip()
+
+    # Conventional commit regex
+    pattern = re.compile(r"^(feat|fix|docs|style|refactor|test|chore)(\([^)]+\))?: .+$")
+
+    if not pattern.match(first_line):
+        print("Commit message does not follow Conventional Commits format.")
+        print("   Example: feat(parser): add new lexer support")
+        print()
+        print(f"Your message: {first_line}")
+        sys.exit(1)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
