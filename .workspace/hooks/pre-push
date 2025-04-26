@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import json
+from pathlib import Path
 
 
 def run(cmd, check=True, capture_output=False, text=True, allow_failure=False):
@@ -25,7 +26,25 @@ def fail(message):
     sys.exit(1)
 
 
+def rust_files_changed():
+    """Detect if non-xtask Rust files were changed."""
+    changed_files = run("git diff --name-only origin/main...HEAD", capture_output=True)
+    if not changed_files:
+        return False
+
+    for file in changed_files.splitlines():
+        if file.endswith(".rs") and not file.startswith("xtask/"):
+            return True
+    return False
+
+
 def main():
+    if not rust_files_changed():
+        print("No relevant Rust files changed. Skipping tests and coverage.")
+        return
+
+    print("Relevant Rust files changed. Running tests and coverage...")
+
     print("Running cargo test before coverage...")
     run("cargo test --all")
 

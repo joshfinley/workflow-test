@@ -25,9 +25,19 @@ def fail(message):
     sys.exit(1)
 
 
-def main():
-    # Redirect output to stderr (Python's print already goes to stdout, so we handle errors in fail())
+def rust_files_changed():
+    """Detect if any .rs files outside xtask/ changed."""
+    changed_files = run("git diff --cached --name-only", capture_output=True)
+    if not changed_files:
+        return False
 
+    for file in changed_files.splitlines():
+        if file.endswith(".rs") and not file.startswith("xtask/"):
+            return True
+    return False
+
+
+def main():
     # Determine "against" reference
     try:
         run("git rev-parse --verify HEAD", check=True)
@@ -52,24 +62,27 @@ Examples:
         )
 
     # 2. Prevent overly large commits
-    changed_files = int(
+    changed_files_count = int(
         run("git diff --cached --name-only | wc -l", capture_output=True)
     )
     MAX_CHANGED_FILES = 5
-    if changed_files > MAX_CHANGED_FILES:
+    if changed_files_count > MAX_CHANGED_FILES:
         fail(
-            f"Too many files changed ({changed_files}). Please break this into smaller commits."
+            f"Too many files changed ({changed_files_count}). Please break this into smaller commits."
         )
 
-    # 3. Run Cargo checks
-    print("+cargo clippy --all -- -D warnings")
-    run("cargo clippy --all -- -D warnings")
+    # 3. Run Cargo checks only if Rust files changed
+    if rust_files_changed():
+        print("+cargo clippy --all -- -D warnings")
+        run("cargo clippy --all -- -D warnings")
 
-    print("+cargo +nightly fmt --all -- --check")
-    run("cargo +nightly fmt --all -- --check")
+        print("+cargo +nightly fmt --all -- --check")
+        run("cargo +nightly fmt --all -- --check")
 
-    print("+cargo test --all")
-    run("cargo test --all")
+        print("+cargo test --all")
+        run("cargo test --all")
+    else:
+        print("No relevant Rust file changes detected. Skipping clippy, fmt, and test.")
 
     # 4. Disallow non-ASCII filenames
     allownonascii = run(
@@ -88,7 +101,7 @@ Examples:
             fail("Error: Attempt to add a non-ASCII file name.")
 
     # 5. Whitespace errors
-    print("+git diff-index --check --cached", against)
+    print(f"+git diff-index --check --cached {against}")
     run(f"git diff-index --check --cached {against}")
 
 
