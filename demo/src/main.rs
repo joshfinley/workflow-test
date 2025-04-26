@@ -1,181 +1,190 @@
-//! Source: https://github.com/lpxxn/rust-design-pattern/blob/master/behavioral/state.rs
+//! Source: https://github.com/lpxxn/rust-design-pattern/blob/master/behavioral/observer.rs
 //! Included to provide testing surface for repository infrastructure. Source
 //! license included at the bottom of this file.
 
-//! State is a behavioral design pattern that lets an object alter its behavior
-//! when its internal state changes. It appears as if the object changed its
-//! class.
+//! Observer is a behavioral design pattern that allows one objects to notify
+//! other objects about changes in their state.
 
-//! We’ll implement a blog post workflow
-//! 1. A blog post starts as an empty draft.
-//! 2. When the draft is done, a review of the post is requested.
-//! 3. When the post is approved, it gets published.
-//! 4. Only published blog posts return content to print, so unapproved posts
-//!    can’t accidentally be published.
-
-trait State {
-    fn request_review(self: Box<Self>) -> Box<dyn State>;
-    fn approve(self: Box<Self>) -> Box<dyn State>;
-    fn content<'a>(&self, _post: &'a Post) -> &'a str {
-        ""
-    }
+trait IObserver {
+    fn update(&self);
 }
 
-struct Draft;
-impl State for Draft {
-    fn request_review(self: Box<Draft>) -> Box<dyn State> {
-        Box::new(PendingReview {})
-    }
-    fn approve(self: Box<Draft>) -> Box<dyn State> {
-        self
-    }
+trait ISubject<'a, T: IObserver> {
+    fn attach(&mut self, observer: &'a T);
+    fn detach(&mut self, observer: &'a T);
+    fn notify_observers(&self);
 }
 
-struct PendingReview;
-impl State for PendingReview {
-    fn request_review(self: Box<PendingReview>) -> Box<dyn State> {
-        self
-    }
-    fn approve(self: Box<PendingReview>) -> Box<dyn State> {
-        Box::new(Published {})
-    }
+struct Subject<'a, T: IObserver> {
+    observers: Vec<&'a T>,
 }
-
-struct Published;
-impl State for Published {
-    fn request_review(self: Box<Published>) -> Box<dyn State> {
-        self
-    }
-    fn approve(self: Box<Published>) -> Box<dyn State> {
-        self
-    }
-    fn content<'a>(&self, post: &'a Post) -> &'a str {
-        &post.content
-    }
-}
-
-struct Post {
-    state:   Option<Box<dyn State>>,
-    content: String,
-}
-
-impl Post {
-    fn new() -> Post {
-        Post {
-            state:   Some(Box::new(Draft {})),
-            content: String::new(),
+impl<'a, T: IObserver + PartialEq> Subject<'a, T> {
+    fn new() -> Subject<'a, T> {
+        Subject {
+            observers: Vec::new(),
         }
     }
-    fn add_text(&mut self, text: &str) {
-        self.content.push_str(text);
+}
+
+impl<'a, T: IObserver + PartialEq> ISubject<'a, T> for Subject<'a, T> {
+    fn attach(&mut self, observer: &'a T) {
+        self.observers.push(observer);
     }
-    fn content(&self) -> &str {
-        self.state.as_ref().unwrap().content(self)
-    }
-    fn request_review(&mut self) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.request_review())
+    fn detach(&mut self, observer: &'a T) {
+        if let Some(idx) = self.observers.iter().position(|x| *x == observer) {
+            self.observers.remove(idx);
         }
     }
-    fn approve(&mut self) {
-        if let Some(s) = self.state.take() {
-            self.state = Some(s.approve())
+    fn notify_observers(&self) {
+        for item in self.observers.iter() {
+            item.update();
         }
     }
+}
+
+#[derive(PartialEq)]
+struct ConcreteObserver {
+    id: i32,
+}
+impl IObserver for ConcreteObserver {
+    fn update(&self) {
+        println!("Observer id:{} received event!", self.id);
+    }
+}
+
+// Extracted run_main()
+fn run_main() {
+    let mut subject = Subject::new();
+    let observer_a = ConcreteObserver { id: 1 };
+    let observer_b = ConcreteObserver { id: 2 };
+
+    subject.attach(&observer_a);
+    subject.attach(&observer_b);
+    subject.notify_observers();
+
+    subject.detach(&observer_b);
+    subject.notify_observers();
 }
 
 fn main() {
-    let mut post = Post::new();
-
-    let text = "State is a behavioral design pattern.";
-    post.add_text(text);
-    assert_eq!("", post.content());
-
-    post.request_review();
-    assert_eq!("", post.content());
-
-    post.approve();
-    assert_eq!(text, post.content());
-    println!("post content: {}", post.content());
+    run_main();
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn draft_post_content_is_empty() {
-        let mut post = Post::new();
-        post.add_text("Learning Rust!");
+    // A test observer that records if it was updated
+    #[derive(PartialEq)]
+    struct TestObserver {
+        id:      i32,
+        updated: std::cell::RefCell<bool>,
+    }
 
-        assert_eq!("", post.content());
+    impl TestObserver {
+        fn new(id: i32) -> Self {
+            Self {
+                id,
+                updated: std::cell::RefCell::new(false),
+            }
+        }
+
+        fn was_updated(&self) -> bool {
+            *self.updated.borrow()
+        }
+
+        fn reset(&self) {
+            *self.updated.borrow_mut() = false;
+        }
+    }
+
+    impl IObserver for TestObserver {
+        fn update(&self) {
+            *self.updated.borrow_mut() = true;
+        }
     }
 
     #[test]
-    fn pending_review_post_content_is_still_empty() {
-        let mut post = Post::new();
-        post.add_text("Learning Rust!");
-        post.request_review();
+    fn test_attach_and_notify() {
+        let mut subject = Subject::new();
+        let observer = TestObserver::new(1);
 
-        assert_eq!("", post.content());
+        subject.attach(&observer);
+        subject.notify_observers();
+
+        assert!(observer.was_updated(), "Observer should have been updated");
     }
 
     #[test]
-    fn published_post_content_is_visible() {
-        let mut post = Post::new();
-        let text = "Learning Rust!";
-        post.add_text(text);
-        post.request_review();
-        post.approve();
+    fn test_detach() {
+        let mut subject = Subject::new();
+        let observer = TestObserver::new(2);
 
-        assert_eq!(text, post.content());
-    }
+        subject.attach(&observer);
+        subject.detach(&observer);
+        observer.reset();
 
-    #[test]
-    fn approving_without_review_does_not_publish() {
-        let mut post = Post::new();
-        post.add_text("Skipping review?");
-        post.approve();
+        subject.notify_observers();
 
-        assert_eq!(
-            "",
-            post.content(),
-            "Post should not be published without review"
+        assert!(
+            !observer.was_updated(),
+            "Detached observer should NOT have been updated"
         );
     }
 
     #[test]
-    fn double_request_review_does_not_change_state() {
-        let mut post = Post::new();
-        post.add_text("Double review request");
-        post.request_review();
-        post.request_review(); // should not move to Published
+    fn test_multiple_observers() {
+        let mut subject = Subject::new();
+        let observer1 = TestObserver::new(1);
+        let observer2 = TestObserver::new(2);
 
-        assert_eq!("", post.content(), "Post should still not be published");
+        subject.attach(&observer1);
+        subject.attach(&observer2);
+
+        subject.notify_observers();
+
+        assert!(
+            observer1.was_updated(),
+            "Observer 1 should have been updated"
+        );
+        assert!(
+            observer2.was_updated(),
+            "Observer 2 should have been updated"
+        );
     }
 
     #[test]
-    fn approve_after_review_only_once_needed() {
-        let mut post = Post::new();
-        post.add_text("Approval after one review");
-        post.request_review();
-        post.approve();
+    fn test_detach_one_of_multiple() {
+        let mut subject = Subject::new();
+        let observer1 = TestObserver::new(1);
+        let observer2 = TestObserver::new(2);
 
-        assert_eq!("Approval after one review", post.content());
+        subject.attach(&observer1);
+        subject.attach(&observer2);
+        subject.detach(&observer1);
+        observer1.reset();
+        observer2.reset();
+
+        subject.notify_observers();
+
+        assert!(
+            !observer1.was_updated(),
+            "Detached observer 1 should NOT have been updated"
+        );
+        assert!(
+            observer2.was_updated(),
+            "Observer 2 should have been updated"
+        );
     }
 
     #[test]
-    fn cannot_add_text_after_request_review() {
-        let mut post = Post::new();
-        post.add_text("Initial content.");
-        post.request_review();
-        post.add_text(" This should not appear.");
-
-        post.approve();
-
-        assert_eq!("Initial content. This should not appear.", post.content());
+    fn test_run_main() {
+        // Just make sure run_main() doesn't panic
+        run_main();
     }
 }
+
 
 // Mozilla Public License Version 2.0
 // ================================
