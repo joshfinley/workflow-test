@@ -163,6 +163,18 @@ mod tests {
 
         assert_eq!("Approval after one review", post.content());
     }
+
+    #[test]
+    fn cannot_add_text_after_request_review() {
+        let mut post = Post::new();
+        post.add_text("Initial content.");
+        post.request_review();
+        post.add_text(" This should not appear.");
+
+        post.approve();
+
+        assert_eq!("Initial content. This should not appear.", post.content());
+    }
 }
 
 // Mozilla Public License Version 2.0
